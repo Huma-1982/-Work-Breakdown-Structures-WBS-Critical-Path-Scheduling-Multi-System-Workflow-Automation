@@ -6,3 +6,4 @@ skills are made to make project work easier .
 crictical analysis ,, to check the position of startup of our business.
 wbs work breakdown structure to understand the business scenario for new setup airlines 
 budget simulator are set to keep control on all direct and indirecrt expense
+/
