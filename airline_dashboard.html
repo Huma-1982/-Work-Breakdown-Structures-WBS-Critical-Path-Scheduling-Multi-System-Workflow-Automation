@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Schedule &amp; Budget Simulator</title>
+<style>
+  :root {
+    --navy: #0B2545;
+    --navy-2: #13315C;
+    --slate: #3B4A5A;
+    --paper: #F4F6F8;
+    --line: #D8DEE4;
+    --amber: #C87A2B;
+    --red: #B3412C;
+    --green: #2F7A4F;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--navy);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  }
+  header {
+    background: var(--navy); color: #fff; padding: 20px 28px;
+  }
+  header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+  header p { margin: 0; color: #B7C4D6; font-size: 13px; }
+  .wrap { padding: 20px 28px 60px; max-width: 1400px; margin: 0 auto; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+  .kpi {
+    background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px;
+  }
+  .kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--slate); margin-bottom: 6px; }
+  .kpi .value { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+  .kpi .delta { font-family: var(--mono); font-size: 12px; margin-top: 4px; }
+  .delta.up { color: var(--red); } .delta.down { color: var(--green); } .delta.flat { color: var(--slate); }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 20px; overflow: hidden; }
+  .panel h2 { font-size: 14px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #FAFBFC; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid #EEF1F4; white-space: nowrap; }
+  th { color: var(--slate); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  tr.critical td { background: #FCEFEA; }
+  td.num { font-family: var(--mono); text-align: right; }
+  input[type=range] { width: 120px; vertical-align: middle; }
+  .slider-val { font-family: var(--mono); display: inline-block; width: 28px; text-align: right; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+  .badge.crit { background: var(--red); color: #fff; }
+  .badge.slack { background: #E7EBEF; color: var(--slate); }
+  .gantt-row { position: relative; height: 20px; background: #F0F2F4; border-radius: 3px; }
+  .gantt-bar { position: absolute; top: 2px; height: 16px; border-radius: 3px; background: #6E8CAE; }
+  .gantt-bar.critical { background: var(--red); }
+  .gantt-bar.slipped { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .gantt-wrap { padding: 14px 16px; }
+  .gantt-labels { font-size: 11px; color: var(--slate); margin-bottom: 2px; display: flex; justify-content: space-between; }
+  .reset-btn {
+    background: var(--navy-2); color: #fff; border: none; padding: 7px 14px; border-radius: 4px;
+    font-size: 12px; cursor: pointer; float: right; margin: 10px 16px 0 0;
+  }
+  .reset-btn:hover { background: var(--navy); }
+  .footnote { font-size: 11.5px; color: var(--slate); padding: 10px 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="proj-name"></h1>
+  <p>Drag a slider to slip a task by working days and watch the projected end date and budget move live.</p>
+</header>
+<div class="wrap">
+  <div class="kpis">
+    <div class="kpi"><div class="label">Projected End Date</div><div class="value" id="kpi-end"></div><div class="delta" id="kpi-end-delta"></div></div>
+    <div class="kpi"><div class="label">Duration (working days)</div><div class="value" id="kpi-dur"></div><div class="delta" id="kpi-dur-delta"></div></div>
+    <div class="kpi"><div class="label">Total Budget</div><div class="value" id="kpi-cost"></div><div class="delta" id="kpi-cost-delta"></div></div>
+    <div class="kpi"><div class="label">Tasks on Critical Path</div><div class="value" id="kpi-crit"></div><div class="delta" id="kpi-crit-delta"></div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Live Gantt <button class="reset-btn" onclick="resetAll()">Reset all sliders</button></h2>
+    <div class="gantt-wrap" id="gantt"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Tasks — drag to add delay (working days)</h2>
+    <table>
+      <thead><tr>
+        <th>WBS</th><th>Task</th><th>Baseline Slack</th><th>Status</th>
+        <th>Delay</th><th class="num">Start</th><th class="num">Finish</th><th class="num">Cost</th>
+      </tr></thead>
+      <tbody id="task-rows"></tbody>
+    </table>
+  </div>
+  <p class="footnote">Slack shown is the baseline (zero-delay) slack. A task with slack absorbs some delay
+  before it affects the deadline; a task with zero slack is on the critical path and any slip pushes the
+  go-live date day-for-day.</p>
+</div>
+
+<script>
+const DATA = {"project": {"name": "AI-Driven Finance Project: Startup Airline Budgeting & Forecasting", "currency": "USD", "start_date": "2026-07-13", "workweek": [0, 1, 2, 3, 4], "holidays": ["2026-09-07", "2026-11-26", "2026-12-25"], "contingency_pct": 12}, "tasks": [{"id": "T1.1", "name": "Define KPI taxonomy (RASM, CASM, Yield, EBITDA, Cash Burn)", "wbs": "1.1", "duration": 3, "predecessors": [], "cost": 3600, "vendor": null, "milestone": false}, {"id": "T1.2", "name": "Source schedule & fleet dataset (10 aircraft, routes)", "wbs": "1.2", "duration": 5, "predecessors": ["T1.1"], "cost": 10000, "vendor": "OAG Aviation Data", "milestone": false}, {"id": "T1.3", "name": "Stand up Asana workspace & project structure", "wbs": "1.3", "duration": 2, "predecessors": ["T1.1"], "cost": 1600, "vendor": null, "milestone": false}, {"id": "M1", "name": "Milestone: Data foundation approved", "wbs": "1.4", "duration": 0, "predecessors": ["T1.2", "T1.3"], "cost": 0, "vendor": null, "milestone": true}, {"id": "T2.1", "name": "Build revenue model (flights x seats x load factor x fare + ancillary)", "wbs": "2.1", "duration": 6, "predecessors": ["M1"], "cost": 9000, "vendor": null, "milestone": false}, {"id": "T2.2", "name": "Build Opex model (crew, fuel, maintenance, airport fees, ground handling)", "wbs": "2.2", "duration": 7, "predecessors": ["M1"], "cost": 10500, "vendor": null, "milestone": false}, {"id": "T2.3", "name": "Build CapEx schedule (aircraft, ground equipment)", "wbs": "2.3", "duration": 4, "predecessors": ["M1"], "cost": 6000, "vendor": null, "milestone": false}, {"id": "T2.4", "name": "Assemble Year-1 annual budget in Excel (Rev $120M, GM 18%, LF 82% targets)", "wbs": "2.4", "duration": 4, "predecessors": ["T2.1", "T2.2", "T2.3"], "cost": 6400, "vendor": null, "milestone": false}, {"id": "M2", "name": "Milestone: Annual budget signed off", "wbs": "2.5", "duration": 0, "predecessors": ["T2.4"], "cost": 0, "vendor": null, "milestone": true}, {"id": "T3.1", "name": "Design monthly actuals-vs-forecast update mechanism", "wbs": "3.1", "duration": 4, "predecessors": ["M2"], "cost": 6000, "vendor": null, "milestone": false}, {"id": "T3.2", "name": "Model driver-based rolling forecast (fuel price, load factor, yield, maintenance, FX)", "wbs": "3.2", "duration": 6, "predecessors": ["T3.1"], "cost": 9000, "vendor": null, "milestone": false}, {"id": "T3.3", "name": "Automate monthly refresh workflow in Asana", "wbs": "3.3", "duration": 3, "predecessors": ["T3.2"], "cost": 2400, "vendor": null, "milestone": false}, {"id": "T4.1", "name": "Build per-route RASM/CASM calculation engine", "wbs": "4.1", "duration": 5, "predecessors": ["M2"], "cost": 7500, "vendor": null, "milestone": false}, {"id": "T4.2", "name": "Route profitability ranking & drill-down views", "wbs": "4.2", "duration": 3, "predecessors": ["T4.1"], "cost": 2400, "vendor": null, "milestone": false}, {"id": "T5.1", "name": "Source fuel price feed / forward curve", "wbs": "5.1", "duration": 3, "predecessors": ["M2"], "cost": 6300, "vendor": "Platts Fuel Data Feed", "milestone": false}, {"id": "T5.2", "name": "Build fuel scenario sensitivity model (28% of opex driver)", "wbs": "5.2", "duration": 4, "predecessors": ["T5.1", "T2.2"], "cost": 6000, "vendor": null, "milestone": false}, {"id": "T6.1", "name": "Build crew/staff headcount & cost plan by function", "wbs": "6.1", "duration": 5, "predecessors": ["M2"], "cost": 7000, "vendor": null, "milestone": false}, {"id": "T7.1", "name": "Build 13-week + 12-month cash flow model, working capital & cash burn", "wbs": "7.1", "duration": 5, "predecessors": ["T2.4", "T6.1"], "cost": 7500, "vendor": null, "milestone": false}, {"id": "T8.1", "name": "Build variance analysis engine (budget vs actual vs forecast)", "wbs": "8.1", "duration": 4, "predecessors": ["T3.2", "T7.1"], "cost": 6000, "vendor": null, "milestone": false}, {"id": "T8.2", "name": "Integrate AI narrative engine (variance commentary, anomaly detection, demand estimation)", "wbs": "8.2", "duration": 6, "predecessors": ["T8.1"], "cost": 10500, "vendor": "Anthropic API (Claude)", "milestone": false}, {"id": "T9.1", "name": "Design Power BI data model (KPIs, drill-downs)", "wbs": "9.1", "duration": 4, "predecessors": ["T4.2", "T8.1"], "cost": 8400, "vendor": "Power BI (Microsoft)", "milestone": false}, {"id": "T9.2", "name": "Build executive dashboard & board-reporting views", "wbs": "9.2", "duration": 5, "predecessors": ["T9.1"], "cost": 7500, "vendor": null, "milestone": false}, {"id": "T10.1", "name": "Configure Asana recurring budgeting tasks, approvals, milestones", "wbs": "10.1", "duration": 3, "predecessors": ["T3.3"], "cost": 2400, "vendor": null, "milestone": false}, {"id": "T10.2", "name": "Build Slack automation (variance alerts, AI summaries, board-report notices)", "wbs": "10.2", "duration": 4, "predecessors": ["T8.2"], "cost": 6600, "vendor": "Slack (via API)", "milestone": false}, {"id": "T11.1", "name": "End-to-end testing (model, dashboard, automations)", "wbs": "11.1", "duration": 4, "predecessors": ["T9.2", "T10.1", "T10.2"], "cost": 4800, "vendor": null, "milestone": false}, {"id": "T11.2", "name": "User acceptance testing with finance team", "wbs": "11.2", "duration": 3, "predecessors": ["T11.1"], "cost": 3600, "vendor": null, "milestone": false}, {"id": "T11.3", "name": "Executive presentation & go-live", "wbs": "11.3", "duration": 2, "predecessors": ["T11.2"], "cost": 2400, "vendor": null, "milestone": false}, {"id": "M3", "name": "Milestone: Project go-live", "wbs": "11.4", "duration": 0, "predecessors": ["T11.3"], "cost": 0, "vendor": null, "milestone": true}], "baseline": {"end_date": "2026-09-23", "duration_days": 52, "total_cost": 171808.0, "critical_path": ["T1.1", "T1.2", "M1", "T2.2", "T2.4", "M2", "T3.1", "T6.1", "T3.2", "T7.1", "T8.1", "T8.2", "T10.2", "T11.1", "T11.2", "T11.3", "M3"]}};
+const CUR = DATA.project.currency;
+
+function parseDate(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y, m-1, d); }
+function fmtDate(d){ return d.toISOString().slice(0,10); }
+function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+
+function buildCalendar(startDate, workweek, holidays, horizon){
+  const holidaySet = new Set(holidays);
+  const wwSet = new Set(workweek);
+  const wd = [];
+  let cur = new Date(startDate);
+  let guard = 0;
+  while (wd.length <= horizon && guard < horizon*3+400){
+    guard++;
+    const dow = (cur.getDay()+6)%7; // convert JS Sun=0 to Mon=0
+    if (wwSet.has(dow) && !holidaySet.has(fmtDate(cur))) wd.push(new Date(cur));
+    cur = addDays(cur,1);
+  }
+  return wd;
+}
+
+function topoOrder(tasks){
+  const byId = {}; tasks.forEach(t => byId[t.id]=t);
+  const indeg = {}; const succs = {};
+  tasks.forEach(t => { indeg[t.id]=0; succs[t.id]=[]; });
+  tasks.forEach(t => (t.predecessors||[]).forEach(p => { succs[p].push(t.id); indeg[t.id]++; }));
+  let queue = Object.keys(indeg).filter(id => indeg[id]===0);
+  const order = [];
+  while(queue.length){
+    const n = queue.shift(); order.push(n);
+    succs[n].forEach(s => { indeg[s]--; if(indeg[s]===0) queue.push(s); });
+  }
+  return order;
+}
+
+function computeSchedule(delays){
+  const tasks = DATA.tasks;
+  const byId = {}; tasks.forEach(t => byId[t.id]=t);
+  const order = topoOrder(tasks);
+  const dur = {}; order.forEach(id => dur[id] = byId[id].duration + (delays[id]||0));
+  const ES={}, EF={};
+  order.forEach(id => {
+    const preds = byId[id].predecessors || [];
+    let es = 0;
+    preds.forEach(p => { es = Math.max(es, EF[p]); });
+    ES[id]=es; EF[id]=es+dur[id];
+  });
+  const projDur = Math.max(0, ...Object.values(EF));
+  const succs = {}; order.forEach(id => succs[id]=[]);
+  order.forEach(id => (byId[id].predecessors||[]).forEach(p => succs[p].push(id)));
+  const LF={}, LS={};
+  [...order].reverse().forEach(id => {
+    LF[id] = succs[id].length ? Math.min(...succs[id].map(s=>LS[s])) : projDur;
+    LS[id] = LF[id] - dur[id];
+  });
+  const slack = {}; order.forEach(id => slack[id] = LS[id]-ES[id]);
+  const critical = order.filter(id => slack[id]===0);
+
+  const startDate = parseDate(DATA.project.start_date);
+  const wd = buildCalendar(startDate, DATA.project.workweek, DATA.project.holidays, projDur+30);
+  const offsetToDate = off => wd[Math.min(off, wd.length-1)];
+
+  const schedule = {};
+  order.forEach(id => {
+    schedule[id] = {
+      es: ES[id], ef: EF[id], slack: slack[id], critical: slack[id]===0, dur: dur[id],
+      start: offsetToDate(ES[id]),
+      finish: dur[id] > 0 ? offsetToDate(Math.max(EF[id]-1, ES[id])) : offsetToDate(ES[id]),
+    };
+  });
+  const endDate = projDur > 0 ? offsetToDate(Math.max(projDur-1,0)) : startDate;
+
+  let baseCost = 0;
+  tasks.forEach(t => baseCost += t.cost);
+  const contingency = baseCost * (DATA.project.contingency_pct/100);
+  const totalCost = baseCost + contingency;
+
+  return { schedule, order, endDate, projDur, totalCost, critical };
+}
+
+let currentDelays = {};
+
+function fmtMoney(v){ return CUR + ' ' + Math.round(v).toLocaleString(); }
+
+function render(){
+  const result = computeSchedule(currentDelays);
+  document.getElementById('proj-name').textContent = DATA.project.name;
+  document.getElementById('kpi-end').textContent = fmtDate(result.endDate);
+  document.getElementById('kpi-dur').textContent = result.projDur;
+  document.getElementById('kpi-cost').textContent = fmtMoney(result.totalCost);
+  document.getElementById('kpi-crit').textContent = result.critical.length;
+
+  const baseEnd = parseDate(DATA.baseline.end_date);
+  const dayDelta = Math.round((result.endDate - baseEnd) / 86400000);
+  setDelta('kpi-end-delta', dayDelta, ' calendar days', true);
+  setDelta('kpi-dur-delta', result.projDur - DATA.baseline.duration_days, ' working days', true);
+  setDelta('kpi-cost-delta', result.totalCost - DATA.baseline.total_cost, '', true, true);
+  setDelta('kpi-crit-delta', result.critical.length - DATA.baseline.critical_path.length, ' vs baseline', false);
+
+  renderTable(result);
+  renderGantt(result);
+}
+
+function setDelta(elId, delta, suffix, higherIsWorse, isMoney){
+  const el = document.getElementById(elId);
+  if (Math.abs(delta) < 0.001){ el.textContent = 'baseline'; el.className='delta flat'; return; }
+  const sign = delta > 0 ? '+' : '';
+  const text = isMoney ? sign + fmtMoney(delta) : sign + delta + suffix;
+  el.textContent = text + ' vs baseline';
+  el.className = 'delta ' + ((delta>0)===higherIsWorse ? 'up' : 'down');
+}
+
+function renderTable(result){
+  const tbody = document.getElementById('task-rows');
+  tbody.innerHTML = '';
+  DATA.tasks.forEach(t => {
+    const s = result.schedule[t.id];
+    const tr = document.createElement('tr');
+    if (s.critical) tr.className = 'critical';
+    const baselineSlack = baselineSlackFor(t.id);
+    tr.innerHTML = `
+      <td>${t.wbs}</td>
+      <td>${t.name}${t.vendor ? ' <span class="badge slack">'+t.vendor+'</span>' : ''}</td>
+      <td class="num">${baselineSlack}</td>
+      <td>${s.critical ? '<span class="badge crit">CRITICAL</span>' : '<span class="badge slack">slack '+s.slack+'d</span>'}</td>
+      <td>
+        <input type="range" min="0" max="30" value="${currentDelays[t.id]||0}"
+          oninput="onSlide('${t.id}', this.value, this)">
+        <span class="slider-val" id="val-${t.id}">${currentDelays[t.id]||0}</span>d
+      </td>
+      <td class="num">${fmtDate(s.start)}</td>
+      <td class="num">${fmtDate(s.finish)}</td>
+      <td class="num">${fmtMoney(t.cost)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+let baselineSlackCache = null;
+function baselineSlackFor(id){
+  if (!baselineSlackCache) baselineSlackCache = computeSchedule({}).schedule;
+  return baselineSlackCache[id].slack;
+}
+
+function renderGantt(result){
+  const gantt = document.getElementById('gantt');
+  gantt.innerHTML = '';
+  const totalSpan = Math.max(result.projDur, 1);
+  DATA.tasks.forEach(t => {
+    const s = result.schedule[t.id];
+    const row = document.createElement('div');
+    row.style.marginBottom = '4px';
+    const label = document.createElement('div');
+    label.className = 'gantt-labels';
+    label.innerHTML = `<span>${t.wbs} ${t.name}</span><span>${s.dur}d</span>`;
+    const track = document.createElement('div');
+    track.className = 'gantt-row';
+    const bar = document.createElement('div');
+    bar.className = 'gantt-bar' + (s.critical ? ' critical' : '') + ((currentDelays[t.id]||0) > 0 ? ' slipped' : '');
+    const leftPct = (s.es/totalSpan)*100;
+    const widthPct = Math.max((s.dur/totalSpan)*100, 0.6);
+    bar.style.left = leftPct+'%';
+    bar.style.width = widthPct+'%';
+    track.appendChild(bar);
+    row.appendChild(label);
+    row.appendChild(track);
+    gantt.appendChild(row);
+  });
+}
+
+function onSlide(id, val, el){
+  currentDelays[id] = parseInt(val, 10);
+  document.getElementById('val-'+id).textContent = val;
+  render();
+}
+
+function resetAll(){
+  currentDelays = {};
+  render();
+}
+
+render();
+</script>
+</body>
+</html>

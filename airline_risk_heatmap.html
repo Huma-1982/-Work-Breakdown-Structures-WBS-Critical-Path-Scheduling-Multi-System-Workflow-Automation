@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Risk Heat Map</title>
+<style>
+  :root { --navy:#0B2545; --slate:#3B4A5A; --paper:#F4F6F8; --line:#D8DEE4; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--paper); color:var(--navy); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; }
+  header { background: var(--navy); color:#fff; padding: 18px 26px; }
+  header h1 { margin:0 0 4px; font-size: 19px; }
+  header p { margin:0; color:#B7C4D6; font-size: 13px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 22px 26px 60px; display:grid; grid-template-columns: 480px 1fr; gap: 24px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  .grid-panel { background:#fff; border:1px solid var(--line); border-radius:6px; padding: 16px; }
+  .matrix { display:grid; grid-template-columns: 90px repeat(5, 1fr); grid-template-rows: repeat(5, 64px) 30px; gap:4px; }
+  .axis-label { display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate); font-weight:600; }
+  .cell { border-radius:5px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; cursor:pointer; color:#20323f; border: 2px solid transparent; transition: transform .1s; }
+  .cell:hover { transform: scale(1.04); border-color: var(--navy); }
+  .cell.active { border-color: var(--navy); box-shadow: 0 0 0 2px var(--navy) inset; }
+  .cell .count { font-size: 11px; font-weight: 500; margin-top:2px; }
+  .side { background:#fff; border:1px solid var(--line); border-radius:6px; padding:16px; min-height: 300px; }
+  .side h2 { margin-top:0; font-size:14px; }
+  .risk-card { border:1px solid var(--line); border-left: 4px solid #999; border-radius:4px; padding:10px 12px; margin-bottom:10px; }
+  .risk-card .id { font-weight:700; font-size:12.5px; }
+  .risk-card .meta { font-size:11px; color:var(--slate); margin: 4px 0 6px; }
+  .risk-card .desc { font-size:12.5px; margin-bottom:6px; }
+  .risk-card .row { font-size:11.5px; margin:2px 0; }
+  .risk-card .row b { color: var(--slate); }
+  .empty-hint { color: var(--slate); font-size: 13px; }
+  .legend { display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--slate); flex-wrap:wrap; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .swatch { width:11px; height:11px; border-radius:2px; display:inline-block; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="proj-name"></h1>
+  <p>Probability x Impact heat map — click a cell to see the risks in it.</p>
+</header>
+<div class="wrap">
+  <div class="grid-panel">
+    <div class="matrix" id="matrix"></div>
+    <div class="legend">
+      <span><span class="swatch" style="background:#C6E0B4"></span>Low (1-4)</span>
+      <span><span class="swatch" style="background:#FFE699"></span>Medium (5-9)</span>
+      <span><span class="swatch" style="background:#F8CBAD"></span>High (10-15)</span>
+      <span><span class="swatch" style="background:#FF6B6B"></span>Critical (16-25)</span>
+    </div>
+  </div>
+  <div class="side" id="side">
+    <h2>Select a cell</h2>
+    <p class="empty-hint">Click any cell in the grid to list the risks that fall in that
+    probability x impact combination.</p>
+  </div>
+</div>
+<script>
+const DATA = {"project_name": "AI-Driven Finance Project: Startup Airline Budgeting & Forecasting", "risks": [{"id": "R1", "task_ids": ["T1.2"], "category": "Vendor", "description": "OAG Aviation Data schedule/fleet feed delivery slips past the need date, delaying the whole data foundation phase.", "probability_level": 3, "probability": 0.5, "impact_level": 4, "impact_days": 8, "impact_cost": 6000, "score": 12, "band": "High", "response": "Mitigate", "mitigation": "Confirm data delivery SLA in writing before kickoff; request a sample extract in week 1 to de-risk format issues.", "owner": "Data Analyst", "trigger": "No confirmed delivery date from OAG by day 2 of T1.2."}, {"id": "R2", "task_ids": ["T5.1", "T5.2"], "category": "Vendor", "description": "Platts fuel price feed contract signing slips, delaying the fuel scenario model that underpins 28% of opex.", "probability_level": 3, "probability": 0.5, "impact_level": 4, "impact_days": 6, "impact_cost": 8000, "score": 12, "band": "High", "response": "Mitigate", "mitigation": "Start Platts contracting in parallel with T2.2, not after; keep Refinitiv identified as a backup feed.", "owner": "Data Analyst", "trigger": "Contract unsigned 5 working days before T5.1 start."}, {"id": "R3", "task_ids": ["T8.2"], "category": "Vendor", "description": "Anthropic API rate limits or an account/config issue block the AI variance-commentary integration on first use.", "probability_level": 2, "probability": 0.3, "impact_level": 3, "impact_days": 4, "impact_cost": 3000, "score": 6, "band": "Medium", "response": "Mitigate", "mitigation": "Provision API access and run a smoke test during T8.1, not at the start of T8.2.", "owner": "AI/Automation Engineer", "trigger": "API smoke test fails or returns errors during T8.1."}, {"id": "R4", "task_ids": ["T9.1"], "category": "Vendor", "description": "Power BI licensing/provisioning delay blocks executive dashboard build.", "probability_level": 2, "probability": 0.3, "impact_level": 3, "impact_days": 3, "impact_cost": 2000, "score": 6, "band": "Medium", "response": "Mitigate", "mitigation": "Request Power BI Pro licenses for the BI Developer at project kickoff, not at T9.1 start.", "owner": "PM", "trigger": "Licenses not provisioned 1 week before T9.1."}, {"id": "R5", "task_ids": ["T10.2"], "category": "Vendor", "description": "Slack API/workspace admin approval for automation bots is delayed by IT/security review.", "probability_level": 3, "probability": 0.5, "impact_level": 2, "impact_days": 2, "impact_cost": 1000, "score": 6, "band": "Medium", "response": "Mitigate", "mitigation": "Submit Slack app/bot approval request in week 1 alongside T1.3.", "owner": "AI/Automation Engineer", "trigger": "No IT approval by start of T10.2."}, {"id": "R6", "task_ids": ["T2.2", "T5.2"], "category": "External", "description": "Jet fuel price volatility invalidates opex assumptions after the budget is locked, since fuel is 28% of operating cost.", "probability_level": 4, "probability": 0.7, "impact_level": 4, "impact_days": 0, "impact_cost": 15000, "score": 16, "band": "Critical", "response": "Mitigate", "mitigation": "Build the fuel sensitivity model (T5.2) before, not after, budget sign-off; keep a fuel hedge/contingency line visible in the rolling forecast.", "owner": "Finance Lead", "trigger": "Fuel forward curve moves >10% from the budgeted assumption in any month."}, {"id": "R7", "task_ids": ["T2.1"], "category": "Cost", "description": "Year-1 revenue assumptions ($120M, 82% load factor) are aggressive for a startup airline's first year and may not hold.", "probability_level": 3, "probability": 0.5, "impact_level": 4, "impact_days": 0, "impact_cost": 12000, "score": 12, "band": "High", "response": "Escalate", "mitigation": "Present the revenue model with explicit sensitivity bands (load factor 75/82/88%) to the board rather than a single point estimate.", "owner": "Finance Lead", "trigger": "Actual load factor in first reporting month is >5pts below 82% target."}, {"id": "R8", "task_ids": ["T2.2", "T2.4", "T3.2", "T6.1", "T7.1", "T8.1", "T8.2", "T10.2", "T11.1", "T11.2", "T11.3"], "category": "Schedule", "description": "This chain of tasks is the critical path; any slip on any one of them pushes go-live day-for-day with zero slack.", "probability_level": 3, "probability": 0.5, "impact_level": 3, "impact_days": 5, "impact_cost": 5000, "score": 9, "band": "Medium", "response": "Mitigate", "mitigation": "Weekly critical-path review in Asana; protect these tasks from resource contention with other workstreams.", "owner": "PM", "trigger": "Any critical-path task shows <50% progress at its midpoint checkpoint."}, {"id": "R9", "task_ids": ["T6.1"], "category": "Resource", "description": "Workforce planning depends on a single Finance Analyst; if unavailable, the cash flow forecast (T7.1) is blocked since it has zero slack.", "probability_level": 2, "probability": 0.3, "impact_level": 3, "impact_days": 5, "impact_cost": 4000, "score": 6, "band": "Medium", "response": "Mitigate", "mitigation": "Cross-train a second analyst on the headcount model during T6.1.", "owner": "Finance Lead", "trigger": "Primary analyst unavailable >2 days during T6.1."}, {"id": "R10", "task_ids": ["T11.2"], "category": "Stakeholder", "description": "Finance team UAT surfaces late requirement changes to KPI definitions, re-opening upstream model work close to go-live.", "probability_level": 3, "probability": 0.5, "impact_level": 3, "impact_days": 4, "impact_cost": 3500, "score": 9, "band": "Medium", "response": "Mitigate", "mitigation": "Freeze KPI taxonomy (T1.1) formally and require sign-off before T2.1 starts; treat later changes as a change request.", "owner": "Finance Lead", "trigger": "UAT feedback requests a KPI definition change not in the frozen taxonomy."}]};
+document.getElementById('proj-name').textContent = DATA.project_name + ' — Risk Heat Map';
+
+function bandColor(score){
+  if (score>=16) return '#FF6B6B';
+  if (score>=10) return '#F8CBAD';
+  if (score>=5) return '#FFE699';
+  return '#C6E0B4';
+}
+
+const matrix = document.getElementById('matrix');
+// header row for impact axis (top), invert prob rows so 5 (top) .. 1 (bottom)
+const impactLabels = ['Impact 1','Impact 2','Impact 3','Impact 4','Impact 5'];
+// build grid: row 0 is prob=5 ... row4 is prob=1, then bottom axis row
+for (let probLevel = 5; probLevel >= 1; probLevel--){
+  const rowLabel = document.createElement('div');
+  rowLabel.className='axis-label';
+  rowLabel.textContent = 'Prob ' + probLevel;
+  matrix.appendChild(rowLabel);
+  for (let impactLevel = 1; impactLevel <= 5; impactLevel++){
+    const score = probLevel*impactLevel;
+    const cellRisks = DATA.risks.filter(r => r.probability_level===probLevel && r.impact_level===impactLevel);
+    const cell = document.createElement('div');
+    cell.className='cell';
+    cell.style.background = bandColor(score);
+    cell.dataset.prob = probLevel;
+    cell.dataset.impact = impactLevel;
+    cell.innerHTML = score + (cellRisks.length ? '<div class="count">'+cellRisks.length+' risk'+(cellRisks.length>1?'s':'')+'</div>' : '');
+    cell.onclick = () => selectCell(probLevel, impactLevel, cell);
+    matrix.appendChild(cell);
+  }
+}
+matrix.appendChild(document.createElement('div'));
+impactLabels.forEach(l => {
+  const d = document.createElement('div');
+  d.className='axis-label'; d.textContent = l.replace('Impact ','I');
+  matrix.appendChild(d);
+});
+
+let activeCell = null;
+function selectCell(prob, impact, el){
+  if (activeCell) activeCell.classList.remove('active');
+  el.classList.add('active');
+  activeCell = el;
+  const risks = DATA.risks.filter(r => r.probability_level===prob && r.impact_level===impact);
+  const side = document.getElementById('side');
+  if (!risks.length){
+    side.innerHTML = '<h2>Probability '+prob+' x Impact '+impact+'</h2><p class="empty-hint">No risks currently scored here.</p>';
+    return;
+  }
+  let html = '<h2>Probability '+prob+' x Impact '+impact+' ('+risks.length+')</h2>';
+  risks.forEach(r => {
+    html += `<div class="risk-card" style="border-left-color:${bandColor(r.score)}">
+      <div class="id">${r.id} <span style="color:#3B4A5A;font-weight:500">— ${r.category}</span></div>
+      <div class="meta">Score ${r.score} · ${r.band} · Response: ${r.response}</div>
+      <div class="desc">${r.description}</div>
+      <div class="row"><b>Tasks:</b> ${(r.task_ids||[]).join(', ') || '—'}</div>
+      <div class="row"><b>Mitigation:</b> ${r.mitigation || '—'}</div>
+      <div class="row"><b>Owner:</b> ${r.owner || '—'} &nbsp; <b>Trigger:</b> ${r.trigger || '—'}</div>
+    </div>`;
+  });
+  side.innerHTML = html;
+}
+</script>
+</body>
+</html>
